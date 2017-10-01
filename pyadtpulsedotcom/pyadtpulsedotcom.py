@@ -32,7 +32,7 @@ class AdtPulsedotcom(object):
             param, value = adtpulse_script.split("=",1)
         adtpulse_version = value
         adtpulse_version = adtpulse_version[1:-2]
-        _LOGGER.debug('ADT Pulse ContextPath = %s', adtpulse_version)
+        _LOGGER.info('ADT Pulse ContextPath = %s', adtpulse_version)
         return(adtpulse_version)
     
     ADTPULSEDOTCOM_CONTEXT_PATH = adtpulse_version(ADTPULSEDOTCOM_URL)
@@ -111,16 +111,16 @@ class AdtPulsedotcom(object):
     @asyncio.coroutine
     def async_login(self):
         """Login to AdtPulse.com."""
-        _LOGGER.debug('Attempting to log into AdtPulse.com...')
+        _LOGGER.info('Attempting to log into AdtPulse.com...')
 
         # Get the session key for future logins.
         response = None
         try:
-            with async_timeout.timeout(10, loop=self._loop):
+            with async_timeout.timeout(20, loop=self._loop):
                 response = yield from self._websession.get(
                     self.LOGIN_URL)
 
-            _LOGGER.debug(
+            _LOGGER.info(
                 'Response status from AdtPulse.com: %s',
                 response.status)
             text = yield from response.text()
@@ -148,11 +148,11 @@ class AdtPulsedotcom(object):
         
         try:
             # Make an attempt to log in.
-            with async_timeout.timeout(10, loop=self._loop):
+            with async_timeout.timeout(20, loop=self._loop):
                 response = yield from self._websession.post(
-                    self.LOGIN_URL.format, data=params)
+                    self.LOGIN_URL.format(url=self), data=params)
 
-            _LOGGER.debug(
+            _LOGGER.info(
                 'Status from AdtPulse.com login %s', 
                 response.status)
             _LOGGER.info('Successful login to AdtPulse.com')
@@ -164,28 +164,28 @@ class AdtPulsedotcom(object):
     @asyncio.coroutine
     def async_update(self):
         """Fetch the latest state."""
-        _LOGGER.debug('Calling update on AdtPulse.com')
+        _LOGGER.info('Calling update on AdtPulse.com')
         response = None
         if not self._login_info:
             yield from self.async_login()
         try:
-            with async_timeout.timeout(10, loop=self._loop):
+            with async_timeout.timeout(20, loop=self._loop):
                 response = yield from self._websession.get(
-                    self.DASHBOARD_URL.format)
+                    self.DASHBOARD_URL.format(url=self))
 
-            _LOGGER.debug('Response from AdtPulse.com: %s', response.status)
+            _LOGGER.info('Response from AdtPulse.com: %s', response.status)
             text = yield from response.text()
             _LOGGER.debug(text)
             tree = BeautifulSoup(text, 'html.parser')
             try:
-                self.state = tree.select(self.ALARM_STATE)[0].get_text()
-                _LOGGER.debug(
-                    'Current alarm state: %s', self.state)
-            except IndexError:
+                result = tree.find("div", id=self.ALARM_STATE)
+                self.state = result.text.strip('\n')
+                _LOGGER.info('Current alarm state: %s', self.state)
+            except:
                 # We may have timed out. Re-login again
+                _LOGGER.error("Unable retrieve valid status")
                 self.state = None
                 self._login_info = None
-                yield from self.async_update()
         except (asyncio.TimeoutError, aiohttp.ClientError):
             _LOGGER.error("Can not load login page from AdtPulse.com")
             return False
@@ -199,10 +199,10 @@ class AdtPulsedotcom(object):
 
         :param event: Event command to send to alarm.com
         """
-        _LOGGER.debug('Sending %s to AdtPulse.com', event)
+        _LOGGER.info('Sending %s to AdtPulse.com', event)
 
         try:
-            with async_timeout.timeout(10, loop=self._loop):
+            with async_timeout.timeout(20, loop=self._loop):
                 response = yield from self._websession.post(
                     self.DASHBOARD_URL.format(
                         self._login_info['sessionkey']),
@@ -211,7 +211,7 @@ class AdtPulsedotcom(object):
                             self.COMMAND_LIST[event]['eventvalidation'],
                         self.COMMAND_LIST[event]['command']: event})
 
-                _LOGGER.debug(
+                _LOGGER.info(
                     'Response from AdtPulse.com %s', response.status)
                 text = yield from response.text()
                 tree = BeautifulSoup(text, 'html.parser')
